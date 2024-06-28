@@ -5,8 +5,10 @@ const pdfjsLib = require('./pdf.js/build/generic/build/pdf.js');
 pdf_table_extractor_progress = function (result) {
 };
 
+
+// Extract the tables by recognizing table lines
 pdf_table_extractor = function (doc) {
-    var numPages = doc.numPages;
+    var numPages = doc.numPages;        // get page nums
     var result = {};
     result.pageTables = [];
     result.numPages = numPages;
@@ -32,6 +34,7 @@ pdf_table_extractor = function (doc) {
 
     var lastPromise = Promise.resolve(); // will be used to chain promises
     var loadPage = function (pageNum) {
+        // Deal with every page
         return doc.getPage(pageNum).then(function (page) {
             var verticles = [];
             var horizons = [];
@@ -40,6 +43,8 @@ pdf_table_extractor = function (doc) {
             var transformMatrix = [1, 0, 0, 1, 0, 0];;
             var transformStack = [];
 
+
+            // Get the table structure first. (Then get the content)
             return page.getOperatorList().then(function (opList) {
                 // Get rectangle first
                 var showed = {};
@@ -55,12 +60,17 @@ pdf_table_extractor = function (doc) {
                 var line_max_width = 2;
                 var lineWidth = null;
 
+                // Traverse all the operations
                 while (opList.fnArray.length) {
-                    var fn = opList.fnArray.shift();
-                    var args = opList.argsArray.shift();
+                    var fn = opList.fnArray.shift();    // The fnArray (operator)
+                    var args = opList.argsArray.shift();    // The args
+
+                    // Construction path defines the drawing path. We get rectangle and lines info by parsing this.
                     if (pdfjsLib.OPS.constructPath == fn) {
                         while (args[0].length) {
                             op = args[0].shift();
+                            // Judge different types of drawing OPS
+                            // Rectangle
                             if (op == pdfjsLib.OPS.rectangle) {
                                 x = args[1].shift();
                                 y = args[1].shift();
@@ -69,7 +79,9 @@ pdf_table_extractor = function (doc) {
                                 if (Math.min(width, height) < line_max_width) {
                                     edges.push({ y: y, x: x, width: width, height: height, transform: transformMatrix });
                                 }
-                            } else if (op == pdfjsLib.OPS.moveTo) {
+                            } 
+                            // Lines (moveTo, lineTo)
+                            else if (op == pdfjsLib.OPS.moveTo) { 
                                 current_x = args[1].shift();
                                 current_y = args[1].shift();
                             } else if (op == pdfjsLib.OPS.lineTo) {
@@ -105,13 +117,17 @@ pdf_table_extractor = function (doc) {
                                 // throw ('constructPath ' + op);
                             }
                         }
-                    } else if (pdfjsLib.OPS.save == fn) {
+                    } 
+                    // Transform
+                    else if (pdfjsLib.OPS.save == fn) {
                         transformStack.push(transformMatrix);
                     } else if (pdfjsLib.OPS.restore == fn) {
                         transformMatrix = transformStack.pop();
                     } else if (pdfjsLib.OPS.transform == fn) {
                         transformMatrix = transform_fn(transformMatrix, args);
-                    } else if (pdfjsLib.OPS.setStrokeRGBColor == fn) {
+                    } 
+                    // 
+                    else if (pdfjsLib.OPS.setStrokeRGBColor == fn) {
                         strokeRGBColor = args;
                     } else if (pdfjsLib.OPS.setFillRGBColor == fn) {
                         fillRGBColor = args;
@@ -124,6 +140,7 @@ pdf_table_extractor = function (doc) {
                     }
                 }
 
+                // After we get the rectangle and line information, apply transform matrix to get the actual coordinates and the size
                 edges = edges.map(function (edge) {
                     var point1 = applyTransform_fn([edge.x, edge.y], edge.transform);
                     var point2 = applyTransform_fn([edge.x + edge.width, edge.y + edge.height], edge.transform);
@@ -427,6 +444,7 @@ pdf_table_extractor = function (doc) {
                     }
                 }
             }).then(function () {
+                // Get the cell content
                 return page.getTextContent().then(function (content) {
                     tables = [];
                     table_pos = [];
